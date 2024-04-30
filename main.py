@@ -11,13 +11,19 @@ from playwright.async_api import async_playwright
 
 async def main():
     async with async_playwright() as p:
-        browser = await p.firefox.launch()
+        browser = await p.firefox.launch(headless=False)
         page = await browser.new_page()
         await page.goto(url)
         print('page title ', await page.title())
+        # find number of dresses in catagory
+        await page.locator(':nth-match(:text("abc"), 27)').click();
+
+        
+        
         await browser.close()
 
-asyncio.run(main())
+
+
 
 
 
