@@ -1,23 +1,32 @@
 # Trendgully India Pvt. LTD &copy; Assignment
 
-Navigate to Berska.com > Women > Deresses section of  and scrap information of all items in their cataog.
-## TODO:
-- logging
-- [ ] gather all the data into a pandas dataframe
-- [ ] store all the data into a sqlite3 table
-- [ ] structure the codebase properly
-- [ ] use try catch to log errors
-- [ ] complete the assignment
-- [ ] add thousands of comments to explain code
-- [ ] create the tables for colors, prices, sizes
-- [ ] how to run the project, add to README.md
-- [ ] make it object oriented
+Navigate to Berska.com > Women > Deresses section of  and scrape information of all items in their cataog.
 
-items to scrap
-- [x] product url
-- [ ] product name
-- [ ] product image
-- [ ] product available sizes
-- [ ] product price
-- [ ] product description
+## How to run the project
+- create a virtual enviromnent using the command `python -m venv breshka_scrapping`
+- clone this repositiory into `breshka_scraping`
+- `cd` into `breshka_scrapping` and run the command `Scripts\activate` to activate the virtual envoronment.
+- run the command `pip install playwright`
+- run the command `playwright install`
+- run `main.py`
+
+## TODO:
+- [ ] add thousands of comments to explain code
+- [ ] use try catch to log errors
+- [ ] gather all the data into a pandas dataframe
+- [x] logging
+- [x] structure the codebase properly
+- [x] make it object oriented
+- [ ] how to run the project, add to README.md
+- [ ] complete the assignment
+- [ ] ~~store all the data into a sqlite3 table~~
+- [ ] ~~create the tables for colors, prices, sizes~~
+
+## Items to scrape:
 - [ ] product color variations
+- [ ] product image
+- [x] product url
+- [x] product name
+- [x] product available sizes
+- [x] product price
+- [x] product description
