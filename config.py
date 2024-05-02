@@ -9,7 +9,7 @@ SLEEP_LONG = 10
 SLEEP_SHORT = 5
 FILE_PATH = "result.json"
 
-WORKERS = 2
+WORKERS = 1
 
 # log file
 WS_LOG_PATH = os.path.join(os.path.curdir, "logs")  # '.\\logs'

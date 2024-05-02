@@ -10,17 +10,18 @@ from playwright.async_api import async_playwright
 class Bershka:
     def __init__(self):
         log.info('scrapping Breshka using Python Playwright')
-        self.page_pool = None
         self.catalog_count = 0
-        self.links = list()
-        self.main_page = None
         self.browser = None
-        self.playwright = None
-        self.pages = list()
-        self.semaphore = asyncio.Semaphore(WORKERS)  # Limiting concurrent tasks to 2
-        self.asyncio_tasks = list()
         self.context = None
+        self.playwright = None
+        self.main_page = None
+        self.page_pool = None
+        self.asyncio_tasks = list()
+        self.links = ['/ww/halter-neckline-midi-dress-c0p159392243.html?colorId=251']
+        self.pages = list()
         self.result = list()
+        self.semaphore = asyncio.Semaphore(WORKERS)  # Limiting concurrent tasks to 2
+        self.processed = list()
 
     async def launch_browser(self):
         self.playwright = await async_playwright().start()
@@ -73,7 +74,7 @@ class Bershka:
 
     async def load_all_items(self):
         itemc = 0
-        while itemc < 40:  # self.catalog_count:
+        while itemc < 20:  # self.catalog_count:
             itemc = await self.main_page.locator("xpath=//*[@class='grid-item normal']").count()
             await self.main_page.wait_for_load_state('domcontentloaded')
             await self.main_page.wait_for_load_state('networkidle')
@@ -100,8 +101,20 @@ class Bershka:
             page = await self.get_new_page()  # Get the next available page from the pool
             await self.scrape_product_data(url, page)
 
-    async def scrape_product_data(self, url, page):
+    async def scrape_product_data(self, url, page=None, item_is_variation: bool = False) -> dict | None:
+        if url in self.processed:
+            log.info(f'urls already processed. {url}')
+            return
+        else:
+            self.processed.append(url)
+
+        log.info(f'item is variation : {item_is_variation}, variation url is : {url}')
+
+        if page is None:
+            page = await self.get_new_page()
+
         result = dict()
+
         # data point 1 : URL
         url = BASE_URL + url
         result['url'] = url
@@ -111,11 +124,11 @@ class Bershka:
         await page.wait_for_load_state('networkidle')
         # data point 2 : Item Name
         itemName = await page.locator("xpath=//*[@class='product-title']").inner_text()
-        log.info(f'item name : {itemName}')
+        log.info(f'scraping : {url} | item name : {itemName}')
         result['item name'] = itemName
         # data point 3 : references ( color variations ) not reliable
         itemrefs = await page.locator("xpath=//*[@class='product-reference']").inner_text()
-        log.info(f'item refs : {itemrefs}')
+        log.info(f'scraping : {url} | item refs : {itemrefs}')
         result['description'] = itemrefs
         # data point 4 : sizes available
         itemSizes = await page.locator('.ui--dot-item.is-dot.is-naked').all()
@@ -124,7 +137,7 @@ class Bershka:
             aria_controls = await size.get_attribute('aria-controls')
             if aria_controls != 'aria-modal-NotifyMeModal':
                 aria_label = await size.get_attribute('aria-label')
-                log.info(f"sizes available : {aria_label}")
+                log.info(f"scraping : {url} | sizes available : {aria_label}")
                 available_sizes.append(aria_label)
         result['available sizes'] = available_sizes
         # data point 5 : sizes not in stock
@@ -132,38 +145,49 @@ class Bershka:
         itemSizeNA = await page.locator("xpath=//*[@class='ui--dot-item is-dot is-disabled is-naked']").all()
         for size in itemSizeNA:
             aria_label = await size.get_attribute('aria-label')
-            log.info(f"sizes not available : {aria_label}")
+            log.info(f"scraping : {url} | sizes not available : {aria_label}")
             out_of_stock.append(aria_label)
         result['out of stock'] = out_of_stock
         # data point 6 : price in euros
         itemPrice = await page.locator("xpath=//*[@class='current-price-elem']").first.inner_text()
-        log.info(f"item price : {itemPrice.split(' & ')[0]}")
+        log.info(f"scraping : {url} | item price : {itemPrice.split(' & ')[0]}")
         result['price'] = itemPrice
         # data point 7 : colour options
         # //*[@class='colors-bar']
         itemColours = await page.locator("xpath=//*[@class='colors-bar']").all()
-        variations = list()
-        if len(itemColours) > 0:
-            links = await page.locator("xpath=//a[@role='option']").all()
-            for link in links:
-                alt_name = await link.get_attribute('aria-label')
-                variations.append(
-                    {
-                        'variation_url': await link.get_attribute('href'),
-                        'variation_name': alt_name,
-                        'variation_image_url': await page.locator(
-                            f"xpath=//img[@alt='{alt_name}' and @class='image-item-wrapper__skeleton']").get_attribute(
-                            'src')
-                    }
-                )
-        else:
-            variations.append({})
+        variations = [{}]
+        if not item_is_variation:
+            if len(itemColours) > 0:
+                log.info(f'scraping : {url} | ITEM HAS VARIATIONS')
+                links = await page.locator("xpath=//a[@role='option']").all()
+                link_urls = [await link.get_attribute('href') for link in links]
+                log.info(f'scraping : {url} | variation URLS are {link_urls}')
+                for link in link_urls:
+                    res = await self.scrape_product_data(url=link, item_is_variation=True)
+                    # alt_name = await link.get_attribute('aria-label')
+                    # variations.append(
+                    #     {
+                    #         'variation_url': await link.get_attribute('href'),
+                    #         'variation_name': alt_name,
+                    #         'variation_image_url': await page.locator(
+                    #             f"xpath=//img[@alt='{alt_name}' and @class='image-item-wrapper__skeleton']").get_attribute(
+                    #             'src')
+                    #     }
+                    # )
+                    variations.append(res)
+                    log.info(f'scraping : {url} | variation data of item is {variations}')
+            else:
+                variations.append({})
         result['variations'] = variations
+
         # data point 8: product image
         itemImg = await page.locator(
             "xpath=//img[@data-qa-anchor='pdpMainImage' and @class='image-item']").first.get_attribute('src')
         result['main_img'] = itemImg
-        self.result.append(result)
+        if not item_is_variation:
+            self.result.append(result)
+        log.info(f'scraping : {url} | final result is {result}')
+        return result
 
     async def close_all(self):
         # Write dictionary to JSON file
@@ -181,8 +205,8 @@ async def main():
     await sc.launch_browser()
     await sc.create_main_page()
     await sc.goto_section_dresses()
-    await sc.get_catalog_count()
-    await sc.load_all_items()
+    # await sc.get_catalog_count()
+    # await sc.load_all_items()
     await sc.create_additional_pages()
     # Schedule scraping tasks
     for url in sc.links[:10]:
