@@ -1,8 +1,9 @@
 import asyncio
+import json
 import re
 from itertools import cycle
 
-from config import log, BASE_URL, URL_FOR_DRESSES, WORKERS
+from config import log, BASE_URL, URL_FOR_DRESSES, WORKERS, FILE_PATH
 from playwright.async_api import async_playwright
 
 
@@ -19,6 +20,7 @@ class Bershka:
         self.semaphore = asyncio.Semaphore(WORKERS)  # Limiting concurrent tasks to 2
         self.asyncio_tasks = list()
         self.context = None
+        self.result = list()
 
     async def launch_browser(self):
         self.playwright = await async_playwright().start()
@@ -28,7 +30,7 @@ class Bershka:
         main_page_context = await self.browser.new_context(no_viewport=True)
         # await main_page_context.add_cookies(COOKIES)
         self.main_page = await main_page_context.new_page()
-        await self.main_page.goto(BASE_URL)
+        await self.main_page.goto(BASE_URL, timeout=100000)
         await self.main_page.wait_for_load_state('domcontentloaded')
         await self.main_page.wait_for_load_state('networkidle')
         log.info(f'page title {await self.main_page.title()}')
@@ -42,7 +44,7 @@ class Bershka:
         for i in range(WORKERS):
             new_page = await self.context.new_page()
             self.pages.append(new_page)
-
+        self.pages.append(self.main_page)
         self.page_pool = cycle(self.pages)
 
     async def get_new_page(self):
@@ -50,12 +52,11 @@ class Bershka:
 
     async def goto_section_dresses(self):
         log.info(f'navigating to {URL_FOR_DRESSES}')
-        await self.main_page.goto(URL_FOR_DRESSES)
+        await self.main_page.goto(URL_FOR_DRESSES, timeout=100000)
         await self.main_page.wait_for_load_state('domcontentloaded')
         await self.main_page.wait_for_load_state('networkidle')
 
         log.info(f'page title {await self.main_page.title()}')
-
 
     async def get_catalog_count(self):
         filter_btn = self.main_page.locator('.bskico-filter')
@@ -72,7 +73,7 @@ class Bershka:
 
     async def load_all_items(self):
         itemc = 0
-        while itemc < 40: #self.catalog_count:
+        while itemc < 40:  # self.catalog_count:
             itemc = await self.main_page.locator("xpath=//*[@class='grid-item normal']").count()
             await self.main_page.wait_for_load_state('domcontentloaded')
             await self.main_page.wait_for_load_state('networkidle')
@@ -100,31 +101,76 @@ class Bershka:
             await self.scrape_product_data(url, page)
 
     async def scrape_product_data(self, url, page):
+        result = dict()
+        # data point 1 : URL
         url = BASE_URL + url
-        await page.goto(url)
+        result['url'] = url
+        await page.goto(url, timeout=100000)
         log.info(f"scraping : {url}")
         await page.wait_for_load_state('domcontentloaded')
         await page.wait_for_load_state('networkidle')
+        # data point 2 : Item Name
         itemName = await page.locator("xpath=//*[@class='product-title']").inner_text()
         log.info(f'item name : {itemName}')
+        result['item name'] = itemName
+        # data point 3 : references ( color variations ) not reliable
         itemrefs = await page.locator("xpath=//*[@class='product-reference']").inner_text()
         log.info(f'item refs : {itemrefs}')
+        result['description'] = itemrefs
+        # data point 4 : sizes available
         itemSizes = await page.locator('.ui--dot-item.is-dot.is-naked').all()
+        available_sizes = list()
         for size in itemSizes:
             aria_controls = await size.get_attribute('aria-controls')
             if aria_controls != 'aria-modal-NotifyMeModal':
                 aria_label = await size.get_attribute('aria-label')
                 log.info(f"sizes available : {aria_label}")
-
+                available_sizes.append(aria_label)
+        result['available sizes'] = available_sizes
+        # data point 5 : sizes not in stock
+        out_of_stock = list()
         itemSizeNA = await page.locator("xpath=//*[@class='ui--dot-item is-dot is-disabled is-naked']").all()
         for size in itemSizeNA:
             aria_label = await size.get_attribute('aria-label')
             log.info(f"sizes not available : {aria_label}")
-
+            out_of_stock.append(aria_label)
+        result['out of stock'] = out_of_stock
+        # data point 6 : price in euros
         itemPrice = await page.locator("xpath=//*[@class='current-price-elem']").first.inner_text()
         log.info(f"item price : {itemPrice.split(' & ')[0]}")
+        result['price'] = itemPrice
+        # data point 7 : colour options
+        # //*[@class='colors-bar']
+        itemColours = await page.locator("xpath=//*[@class='colors-bar']").all()
+        variations = list()
+        if len(itemColours) > 0:
+            links = await page.locator("xpath=//a[@role='option']").all()
+            for link in links:
+                alt_name = await link.get_attribute('aria-label')
+                variations.append(
+                    {
+                        'variation_url': await link.get_attribute('href'),
+                        'variation_name': alt_name,
+                        'variation_image_url': await page.locator(
+                            f"xpath=//img[@alt='{alt_name}' and @class='image-item-wrapper__skeleton']").get_attribute(
+                            'src')
+                    }
+                )
+        else:
+            variations.append({})
+        result['variations'] = variations
+        # data point 8: product image
+        itemImg = await page.locator(
+            "xpath=//img[@data-qa-anchor='pdpMainImage' and @class='image-item']").first.get_attribute('src')
+        result['main_img'] = itemImg
+        self.result.append(result)
 
     async def close_all(self):
+        # Write dictionary to JSON file
+
+        with open(FILE_PATH, "w") as json_file:
+            json.dump(self.result, json_file)
+
         await self.context.close()
         await self.browser.close()
         await self.playwright.stop()
