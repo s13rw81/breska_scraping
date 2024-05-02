@@ -1,4 +1,4 @@
-# Trendgully India Pvt. LTD &copy; Assignment
+# Trendgully India Pvt. ltd Assignment
 
 Navigate to Berska.com > Women > Deresses section of  and scrape information of all items in their cataog.
 
