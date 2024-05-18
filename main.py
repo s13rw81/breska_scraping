@@ -2,8 +2,11 @@ import asyncio
 import json
 import re
 from itertools import cycle
-
-from config import log, BASE_URL, URL_FOR_DRESSES, WORKERS, FILE_PATH
+from config import log
+from config import BASE_URL
+from config import URL_FOR_DRESSES
+from config import WORKERS
+from config import FILE_PATH
 from playwright.async_api import async_playwright
 
 
